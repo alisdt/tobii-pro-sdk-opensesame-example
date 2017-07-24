@@ -7,6 +7,8 @@ http://developer.tobiipro.com/python/python-sdk-reference-guide.html
 
 **You may not need this for your experiment if support for the Tobii Pro SDK has been added to PyGaze and OpenSesame, check first!**
 
+If you want to write any output variables alongside eyetracker data, add them to the list `cols_results` in the inline code item `set_up_eyetracker_output`.
+
 This experiment tries to capture loop variables in OpenSesame and write them alongside eyetracking data. At present this conflicts with a lock in OpenSesame. So do **one** of the following:
 
 1. If you want to capture loop variables alongside eyetracker output, find these lines in var_store.py in your copy of OpenSesame:
@@ -26,5 +28,3 @@ Change `raise osexception(` to `warnings.warn(` to disable this error.
         if var.has(k):
             data[k] = var.get(k)
 ```
-
-If you want to write any output variables alongside eyetracker data, add them to the list `cols_results` in the inline code item `set_up_eyetracker_output`.
