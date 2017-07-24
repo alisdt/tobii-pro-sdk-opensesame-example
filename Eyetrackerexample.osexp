@@ -1,0 +1,296 @@
+---
+API: 2
+OpenSesame: 3.1.7a7
+Platform: posix
+---
+set width 1024
+set uniform_coordinates yes
+set title "Eyetracker example"
+set subject_parity even
+set subject_nr 0
+set start experiment
+set sound_sample_size -16
+set sound_freq 48000
+set sound_channels 2
+set sound_buf_size 1024
+set sampler_backend legacy
+set round_decimals 2
+set mouse_backend xpyriment
+set keyboard_backend legacy
+set height 768
+set fullscreen no
+set form_clicks no
+set foreground white
+set font_underline no
+set font_size 18
+set font_italic no
+set font_family mono
+set font_bold no
+set disable_garbage_collection yes
+set description "The main experiment item"
+set coordinates uniform
+set compensation 0
+set color_backend legacy
+set clock_backend legacy
+set canvas_backend xpyriment
+set bidi no
+set background black
+
+define loop Loop1
+	set source_file ""
+	set source table
+	set repeat 1
+	set order random
+	set description "Repeatedly runs another item"
+	set cycles 5
+	set continuous no
+	set break_if_on_first yes
+	set break_if never
+	setcycle 0 word apple
+	setcycle 1 word biscuit
+	setcycle 2 word cat
+	setcycle 3 word dog
+	setcycle 4 word elephant
+	run Seq1
+
+define sequence Seq1
+	set flush_keyboard yes
+	set description "Runs a number of items in sequence"
+	run stimulus always
+	run logger always
+
+define inline_script calibrate_eyetracker
+	set description "Executes Python code"
+	___run__
+	calibration = tr.ScreenBasedCalibration(et)
+	
+	cv = canvas()
+	
+	screen_size = (1920, 1080)
+	sz_x, sz_y = screen_size
+	
+	def tobii_to_opensesame(x, y):
+	    return sz_x*x-sz_x/2, sz_y*y-sz_y/2
+	
+	def calibrate():
+	    points_to_calibrate = [(0.5, 0.5), (0.1, 0.1), (0.1, 0.9), (0.9, 0.1), (0.9, 0.9)]
+	    for point in points_to_calibrate:
+	        x, y = tobii_to_opensesame(*point)
+	        cv.circle(x, y, 25, color='black', fill=True)
+	        cv.show()
+	
+	        self.sleep(1500)
+	
+	        cv.clear()
+	
+	        if calibration.collect_data(point[0], point[1]) != tr.CALIBRATION_STATUS_SUCCESS:
+	            calibration.collect_data(point[0], point[1])
+	
+	    calibration_result = calibration.compute_and_apply()
+	
+	
+	    return calibration_result
+	
+	print("Starting calibration")
+	calibration.enter_calibration_mode()
+	
+	calibration_result = None
+	
+	while True:
+	    calibration_result = calibrate()
+	
+	    if calibration_result.status == tr.CALIBRATION_STATUS_FAILURE:
+	        cv.clear()
+	        cv.text("Calibration failed, try again!", color="black")
+	        cv.show()
+	        m = mouse()
+	        m.get_click()
+	        cv.clear()
+	    else:
+	        break
+	
+	cv2 = canvas(auto_prepare=False)
+	
+	unused_sample_count = 0
+	
+	for point in calibration_result.calibration_points:
+	    x, y = tobii_to_opensesame(*point.position_on_display_area)
+	    cv2.circle(x, y, 25, color='black', fill=False)
+	    for sample in point.calibration_samples:
+	        if sample.left_eye.validity == tr.VALIDITY_VALID_AND_USED:
+	            l_x, l_y = tobii_to_opensesame(*sample.left_eye.position_on_display_area)
+	            cv2.line(x, y, l_x, l_y, color="red")
+	        else:
+	            unused_sample_count += 1
+	        if sample.right_eye.validity == tr.VALIDITY_VALID_AND_USED:
+	            r_x, r_y = tobii_to_opensesame(*sample.right_eye.position_on_display_area)
+	            cv2.line(x, y, r_x, r_y, color="green")
+	        else:
+	            unused_sample_count += 1
+	
+	cv2.prepare()
+	cv2.show()
+	
+	self.sleep(1000)
+	
+	m = mouse()
+	m.get_click()
+	
+	calibration.leave_calibration_mode()
+	print("Calibration finished")
+	
+	et.set_gaze_output_frequency(60)
+	__end__
+	___prepare__
+	import tobii_research as tr
+	ets = tr.find_all_eyetrackers()
+	
+	if len(ets) == 0:
+	    sys.stderr.write("Couldn't find eyetracker, exiting")
+	    sys.exit(-1)
+	
+	et = ets[0]
+	__end__
+
+define inline_script close_eyetracker_output
+	set description "Executes Python code"
+	set _run "et.unsubscribe_from(tr.EYETRACKER_GAZE_DATA, gaze_data_callback)"
+	set _prepare ""
+
+define sequence experiment
+	set flush_keyboard yes
+	set description "Runs a number of items in sequence"
+	run calibrate_eyetracker always
+	run set_up_eyetracker_output always
+	run intro always
+	run start_eyetracker always
+	run Loop1 always
+	run stop_eyetracker always
+	run close_eyetracker_output always
+
+define sketchpad intro
+	set duration keypress
+	set description "Displays stimuli"
+	draw textline center=1 color=white font_bold=no font_family=mono font_italic=no font_size=40 html=yes show_if=always text="Welcome to the experiment" x=0 y=0 z_index=0
+
+define logger logger
+	set description "Logs experimental data"
+	set auto_log yes
+
+define inline_script set_up_eyetracker_output
+	set description "Executes Python code"
+	set _run ""
+	___prepare__
+	from datetime import datetime
+	import os
+	import csv
+	import time
+	
+	cols_general = [
+	    'participant',
+	    'time'
+	]
+	
+	_cols_from_loop = set()
+	for x in ['Loop1']:
+	    _cols_from_loop |= set(items[x].dm.column_names)
+	cols_from_loop = sorted(list(_cols_from_loop))
+	
+	# paste in results from OpenSesame vars as we go
+	cols_results = [
+	]
+	
+	cols_eyetracker = [
+	    'system_time_stamp',
+	    'device_time_stamp'
+	    'left_pupil_diameter',
+	    'left_pupil_validity',
+	    'right_pupil_diameter',
+	    'right_pupil_validity',
+	    'left_gaze_point_on_display_area',
+	    'left_gaze_point_in_user_coordinate_system',
+	    'left_gaze_point_validity',
+	    'right_gaze_point_on_display_area',
+	    'right_gaze_point_in_user_coordinate_system',
+	    'right_gaze_point_validity',
+	    'left_gaze_origin_in_user_coordinate_system',
+	    'left_gaze_origin_in_trackbox_coordinate_system',
+	    'left_gaze_origin_validity',
+	    'right_gaze_origin_in_user_coordinate_system',
+	    'right_gaze_origin_in_trackbox_coordinate_system',
+	    'right_gaze_origin_validity'
+	]
+	
+	cols_eyetracker_tuples = {
+	    'left_gaze_point_on_display_area': 2,
+	    'left_gaze_point_in_user_coordinate_system': 3,
+	    'right_gaze_point_on_display_area': 2,
+	    'right_gaze_point_in_user_coordinate_system': 3,
+	    'left_gaze_origin_in_user_coordinate_system': 3,
+	    'left_gaze_origin_in_trackbox_coordinate_system': 3,
+	    'right_gaze_origin_in_user_coordinate_system': 3,
+	    'right_gaze_origin_in_trackbox_coordinate_system': 3
+	}
+	
+	coordinate_labels = ['x','y','z']
+	
+	cols_all = cols_general+cols_from_loop
+	for c in cols_eyetracker:
+	    if c in cols_eyetracker_tuples:
+	        for idx in range(cols_eyetracker_tuples[c]):
+	            cols_all.append("{}_{}".format(c, coordinate_labels[idx]))
+	    else:
+	        cols_all.append(c)
+	
+	output_location = '.' # just use current directory
+	
+	ppt = self.get("subject_nr")
+	expt_name = self.get("title")
+	eyetracker_csv_out_filename = '_'.join([expt_name, '{}'.format(ppt), datetime.now().isoformat()[:19]])+'.csv'
+	eyetracker_csv_out_filename = eyetracker_csv_out_filename.replace(':','.')
+	eyetracker_csv_out_path = os.path.join(output_location, eyetracker_csv_out_filename)
+	eyetracker_csv_out_file = open(eyetracker_csv_out_path,'wb')
+	eyetracker_csv_out_writer = csv.DictWriter(eyetracker_csv_out_file, fieldnames=cols_all, restval="", extrasaction="ignore")
+	eyetracker_csv_out_writer.writeheader()
+	__end__
+
+define inline_script start_eyetracker
+	set description "Executes Python code"
+	___run__
+	def gaze_data_callback(gaze_data):
+	    #print(len(cols_from_loop))
+	    #print(cols_from_loop[0])
+	    # write to CSV
+	    # gaze_data is already a dict -- add some stuff!
+	    data = gaze_data.copy()
+	    for k in cols_from_loop:
+	        if var.has(k):
+	            data[k] = var.get(k)
+	    for k in cols_results:
+	        data[k] = var.get(k) # no guard -- should be present
+	    data['participant'] = self.get('subject_nr')
+	    data['time'] = datetime.now().isoformat()
+	    for k, v in data.items():
+	        if type(v) is tuple:
+	            for idx, val in enumerate(v):
+	                data[k+'_'+coordinate_labels[idx]] = val
+	            del data[k]
+	    eyetracker_csv_out_writer.writerow(data)
+	
+	et.subscribe_to(tr.EYETRACKER_GAZE_DATA, gaze_data_callback, as_dictionary=True)
+	__end__
+	___prepare__
+	import traceback
+	import time
+	__end__
+
+define sketchpad stimulus
+	set duration keypress
+	set description "Displays stimuli"
+	draw textline center=1 color=white font_bold=no font_family=mono font_italic=no font_size=40 html=yes show_if=always text="[word]" x=0 y=0 z_index=0
+
+define inline_script stop_eyetracker
+	set description "Executes Python code"
+	set _run ""
+	set _prepare ""
+
