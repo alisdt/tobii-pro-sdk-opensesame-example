@@ -5,7 +5,7 @@ This example uses inline code in OpenSesame to capture eyetracker output, using 
 
 http://developer.tobiipro.com/python/python-sdk-reference-guide.html
 
-**You may not need this for your experiment if support for the Tobii Pro SDK has been added to PyGaze and OpenSesame, check first!**
+**Note that support for the Tobii SDK is now in PyGaze and OpenSesame, so you shouldn't need the example here!** You may still want to use it if you are doing something fancy like your own custom calibration routine.
 
 If you want to write any output variables alongside eyetracker data, add them to the list `cols_results` in the inline code item `set_up_eyetracker_output`.
 
